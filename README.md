@@ -30,7 +30,7 @@
 ## 安装
 
 ```bash
-cd /home/ghost/yt-dlp-ui
+cd /home/xxx/yt-dlp-ui
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
@@ -46,7 +46,7 @@ python3 -m pip install -U yt-dlp
 ## 一键启动（推荐）
 
 ```bash
-cd /home/ghost/yt-dlp-ui
+cd /home/xxx/yt-dlp-ui
 ./start.sh
 ```
 
@@ -62,7 +62,7 @@ cd /home/ghost/yt-dlp-ui
 ## 手动启动（旧方式）
 
 ```bash
-cd /home/ghost/yt-dlp-ui
+cd /home/xxx/yt-dlp-ui
 source .venv/bin/activate
 python app.py
 ```
