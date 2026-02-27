@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>yt-dlp UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="hero">
+        <h1>yt-dlp 可视化下载器</h1>
+        <p>基于 yt-dlp，支持解析格式、批量队列、自动重试、完成通知与目录直达。</p>
+      </section>
+
+      <section class="layout-grid">
+        <article class="card">
+          <h2>下载配置</h2>
+          <form id="download-form">
+            <label>
+              视频链接
+              <input id="url" name="url" type="url" placeholder="https://..." />
+            </label>
+
+            <label>
+              批量链接（可选，每行一个）
+              <textarea
+                id="batch_urls"
+                name="batch_urls"
+                rows="5"
+                placeholder="https://example.com/video-1&#10;https://example.com/video-2"
+              ></textarea>
+            </label>
+            <div class="tiny">有批量内容时会与上方单链接合并去重，并按队列顺序下载。</div>
+
+            <div class="row-actions">
+              <button id="parse-btn" type="button" class="btn-secondary">解析视频信息</button>
+              <span id="parse-status" class="tiny">未解析</span>
+            </div>
+
+            <div id="media-info" class="media-info muted">等待解析...</div>
+
+            <label>
+              下载目录
+              <input id="output_dir" name="output_dir" type="text" value="{{ default_output_dir }}" />
+            </label>
+
+            <div class="inline-fields">
+              <label class="checkbox-line">
+                <input id="playlist" name="playlist" type="checkbox" />
+                下载播放列表
+              </label>
+
+              <label class="checkbox-line">
+                <input id="audio_only" name="audio_only" type="checkbox" />
+                仅提取音频
+              </label>
+            </div>
+
+            <div class="inline-fields">
+              <label>
+                格式（优先使用下拉）
+                <select id="format_select" name="format_select">
+                  <option value="{{ default_video_format }}">推荐: 最佳画质自动合并</option>
+                  <option value="best">推荐: 最高兼容单文件</option>
+                </select>
+              </label>
+
+              <label>
+                音频格式
+                <select id="audio_format" name="audio_format">
+                  <option value="mp3">mp3</option>
+                  <option value="m4a">m4a</option>
+                  <option value="wav">wav</option>
+                  <option value="flac">flac</option>
+                  <option value="opus">opus</option>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              自定义格式（可覆盖下拉）
+              <input id="format_id" name="format_id" type="text" placeholder="例如：137+140 / bestvideo[height<=1080]+bestaudio" />
+            </label>
+
+            <label>
+              额外参数（可选）
+              <input id="extra_args" name="extra_args" type="text" placeholder="例如：--cookies cookies.txt --proxy http://127.0.0.1:7890" />
+            </label>
+
+            <label>
+              代理池（可选，每行一个）
+              <textarea
+                id="proxy_pool"
+                name="proxy_pool"
+                rows="4"
+                placeholder="http://127.0.0.1:7890&#10;socks5://127.0.0.1:1080"
+              ></textarea>
+            </label>
+            <div class="tiny">启用后，失败重试会自动轮换代理；额外参数中的 --proxy 会被代理池覆盖。</div>
+
+            <div class="inline-fields-3">
+              <label>
+                失败自动重试次数
+                <input
+                  id="retry_max"
+                  name="retry_max"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="1"
+                  value="{{ default_retry_max }}"
+                />
+              </label>
+
+              <label>
+                重试策略
+                <select id="retry_strategy" name="retry_strategy">
+                  <option value="fixed" {% if default_retry_strategy == "fixed" %}selected{% endif %}>固定间隔</option>
+                  <option value="exponential" {% if default_retry_strategy == "exponential" %}selected{% endif %}>指数退避</option>
+                </select>
+              </label>
+
+              <label>
+                基础重试延迟（秒）
+                <input
+                  id="retry_delay_seconds"
+                  name="retry_delay_seconds"
+                  type="number"
+                  min="1"
+                  max="120"
+                  step="1"
+                  value="{{ default_retry_delay_seconds }}"
+                />
+              </label>
+            </div>
+
+            <div class="inline-fields-3">
+              <label>
+                最大退避延迟（秒）
+                <input
+                  id="retry_max_delay_seconds"
+                  name="retry_max_delay_seconds"
+                  type="number"
+                  min="1"
+                  max="600"
+                  step="1"
+                  value="{{ default_retry_max_delay_seconds }}"
+                />
+              </label>
+
+              <label class="checkbox-line">
+                <input id="notify_done" name="notify_done" type="checkbox" checked />
+                下载完成桌面通知
+              </label>
+
+              <label class="checkbox-line">
+                <input
+                  id="auto_open_output"
+                  name="auto_open_output"
+                  type="checkbox"
+                  {% if default_auto_open_output %}checked{% endif %}
+                />
+                下载完成自动打开目录
+              </label>
+            </div>
+            <div class="tiny">指数退避延迟示例：3s, 6s, 12s...，并受“最大退避延迟”限制。</div>
+
+            <div class="row-actions row-actions-even">
+              <button id="submit-btn" type="submit">开始下载</button>
+              <button id="cancel-btn" type="button" class="btn-danger" disabled>取消任务</button>
+            </div>
+
+            <div class="row-actions row-actions-even">
+              <button id="requeue-btn" type="button" class="btn-secondary" disabled>重排队当前任务</button>
+              <button id="open-dir-btn" type="button" class="btn-secondary" disabled>打开输出目录</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <h2>任务状态</h2>
+          <div class="status-grid">
+            <div><span>任务 ID</span><strong id="job-id">-</strong></div>
+            <div><span>状态</span><strong id="job-status">idle</strong></div>
+            <div><span>重试</span><strong id="job-retry">0/0</strong></div>
+            <div><span>重试策略</span><strong id="job-retry-policy">固定间隔 3s</strong></div>
+            <div><span>代理</span><strong id="job-proxy">-</strong></div>
+            <div><span>消息</span><strong id="job-message">等待开始</strong></div>
+            <div><span>输出文件</span><strong id="job-output">-</strong></div>
+          </div>
+
+          <div class="progress-wrap">
+            <div id="progress-bar">0.0%</div>
+          </div>
+
+          <pre id="logs" class="logs">等待任务日志...</pre>
+
+          <h3>最近任务</h3>
+          <div id="job-list" class="job-list">暂无任务</div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("download-form");
+      const submitBtn = document.getElementById("submit-btn");
+      const cancelBtn = document.getElementById("cancel-btn");
+      const requeueBtn = document.getElementById("requeue-btn");
+      const openDirBtn = document.getElementById("open-dir-btn");
+      const parseBtn = document.getElementById("parse-btn");
+      const parseStatusEl = document.getElementById("parse-status");
+      const mediaInfoEl = document.getElementById("media-info");
+
+      const jobIdEl = document.getElementById("job-id");
+      const statusEl = document.getElementById("job-status");
+      const retryEl = document.getElementById("job-retry");
+      const retryPolicyEl = document.getElementById("job-retry-policy");
+      const proxyEl = document.getElementById("job-proxy");
+      const messageEl = document.getElementById("job-message");
+      const outputEl = document.getElementById("job-output");
+      const progressBar = document.getElementById("progress-bar");
+      const logsEl = document.getElementById("logs");
+      const jobListEl = document.getElementById("job-list");
+
+      const urlEl = document.getElementById("url");
+      const outputDirEl = document.getElementById("output_dir");
+      const audioOnlyEl = document.getElementById("audio_only");
+      const audioFormatEl = document.getElementById("audio_format");
+      const formatSelectEl = document.getElementById("format_select");
+      const formatIdEl = document.getElementById("format_id");
+      const batchUrlsEl = document.getElementById("batch_urls");
+      const extraArgsEl = document.getElementById("extra_args");
+      const proxyPoolEl = document.getElementById("proxy_pool");
+      const playlistEl = document.getElementById("playlist");
+      const retryMaxEl = document.getElementById("retry_max");
+      const retryStrategyEl = document.getElementById("retry_strategy");
+      const retryDelayEl = document.getElementById("retry_delay_seconds");
+      const retryMaxDelayEl = document.getElementById("retry_max_delay_seconds");
+      const notifyDoneEl = document.getElementById("notify_done");
+      const autoOpenOutputEl = document.getElementById("auto_open_output");
+
+      let timer = null;
+      let currentJobId = null;
+      let notificationBootstrapped = false;
+      const notifiedDoneJobs = new Set();
+      const ACTIVE_STATUSES = new Set(["queued", "running", "canceling", "retrying"]);
+      const REQUEUE_ALLOWED = new Set(["failed", "canceled", "done"]);
+
+      function setProgress(value) {
+        const progress = Math.max(0, Math.min(100, Number(value) || 0));
+        progressBar.style.width = `${progress}%`;
+        progressBar.textContent = `${progress.toFixed(1)}%`;
+      }
+
+      function clampInt(value, min, max, fallback) {
+        const parsed = Number.parseInt(String(value ?? ""), 10);
+        if (Number.isNaN(parsed)) {
+          return fallback;
+        }
+        return Math.max(min, Math.min(max, parsed));
+      }
+
+      function isActiveStatus(status) {
+        return ACTIVE_STATUSES.has(String(status || ""));
+      }
+
+      function canRequeue(status) {
+        return REQUEUE_ALLOWED.has(String(status || ""));
+      }
+
+      function renderProxyInfo(job) {
+        const pool = Array.isArray(job?.proxy_pool) ? job.proxy_pool.filter(Boolean) : [];
+        if (!pool.length) {
+          return "-";
+        }
+
+        const idx = Math.max(0, (Number(job?.proxy_index) || 0) % pool.length);
+        const activeProxy = String(job?.active_proxy || "").trim();
+        const proxy = activeProxy || pool[idx];
+        const prefix = activeProxy ? "当前" : "下次";
+        return `${prefix} ${idx + 1}/${pool.length} | ${proxy}`;
+      }
+
+      function collectProxyPool() {
+        const proxyPool = [];
+        const proxySeen = new Set();
+        for (const line of proxyPoolEl.value.split(/\r?\n/)) {
+          const proxy = line.trim();
+          if (!proxy || proxySeen.has(proxy)) {
+            continue;
+          }
+          proxySeen.add(proxy);
+          proxyPool.push(proxy);
+          if (proxyPool.length >= 20) {
+            break;
+          }
+        }
+        return proxyPool;
+      }
+
+      function setRunning(running) {
+        submitBtn.disabled = running;
+        parseBtn.disabled = running;
+        submitBtn.textContent = running ? "下载中..." : "开始下载";
+        cancelBtn.disabled = !running;
+      }
+
+      function applyRetryStrategyState() {
+        const strategy = retryStrategyEl.value;
+        const isExponential = strategy === "exponential";
+        retryMaxDelayEl.disabled = !isExponential;
+        retryMaxDelayEl.title = isExponential ? "" : "固定间隔模式下不使用最大退避延迟";
+      }
+
+      function updateActionButtons(job) {
+        const hasJob = !!job;
+        const status = hasJob ? String(job.status || "") : "";
+        requeueBtn.disabled = !hasJob || !canRequeue(status);
+        openDirBtn.disabled = !hasJob;
+      }
+
+      function startPollingLoop() {
+        if (timer) {
+          clearInterval(timer);
+        }
+        timer = setInterval(() => {
+          if (currentJobId) {
+            pollJob(currentJobId);
+          }
+          refreshJobList();
+        }, 1200);
+      }
+
+      async function ensureNotificationPermission() {
+        if (!("Notification" in window)) {
+          return false;
+        }
+
+        if (Notification.permission === "granted") {
+          return true;
+        }
+
+        if (Notification.permission === "denied") {
+          return false;
+        }
+
+        try {
+          const permission = await Notification.requestPermission();
+          return permission === "granted";
+        } catch {
+          return false;
+        }
+      }
+
+      async function maybeNotifyDone(job) {
+        if (!job || job.status !== "done") {
+          return;
+        }
+        if (!notifyDoneEl.checked) {
+          return;
+        }
+        if (notifiedDoneJobs.has(job.id)) {
+          return;
+        }
+        if (!("Notification" in window) || Notification.permission !== "granted") {
+          return;
+        }
+
+        const bodyParts = [];
+        if (job.url) bodyParts.push(job.url);
+        if (job.output_file) bodyParts.push(job.output_file);
+        const body = bodyParts.join("\n").slice(0, 220) || "任务已完成";
+
+        new Notification("yt-dlp 下载完成", { body });
+        notifiedDoneJobs.add(job.id);
+      }
+
+      function applyAudioOnlyState() {
+        const audioOnly = audioOnlyEl.checked;
+        formatSelectEl.disabled = audioOnly;
+        if (audioOnly) {
+          formatSelectEl.title = "音频模式下不使用视频格式下拉";
+        } else {
+          formatSelectEl.title = "";
+        }
+      }
+
+      function renderMediaInfo(info) {
+        if (!info) {
+          mediaInfoEl.textContent = "等待解析...";
+          mediaInfoEl.classList.add("muted");
+          return;
+        }
+
+        const entriesText = info.entries ? ` | 条目数: ${info.entries}` : "";
+        mediaInfoEl.textContent = `标题: ${info.title} | 作者: ${info.uploader} | 时长: ${info.duration}${entriesText}`;
+        mediaInfoEl.classList.remove("muted");
+      }
+
+      function populateFormats(formats) {
+        const previous = formatSelectEl.value;
+        formatSelectEl.innerHTML = "";
+
+        const items = Array.isArray(formats) ? formats : [];
+        if (items.length === 0) {
+          const option = document.createElement("option");
+          option.value = "bestvideo*+bestaudio/best";
+          option.textContent = "推荐: 最佳画质自动合并";
+          formatSelectEl.append(option);
+          return;
+        }
+
+        for (const item of items) {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = item.label;
+          formatSelectEl.append(option);
+        }
+
+        const stillExists = items.some((item) => item.id === previous);
+        if (stillExists) {
+          formatSelectEl.value = previous;
+        }
+      }
+
+      function renderJob(job) {
+        if (!job) {
+          return;
+        }
+
+        currentJobId = job.id;
+        jobIdEl.textContent = job.id;
+        statusEl.textContent = job.status;
+        retryEl.textContent = `${job.retry_count || 0}/${job.retry_max || 0}`;
+        const retryStrategy = String(job.retry_strategy || "fixed");
+        const retryDelay = Number(job.retry_delay_seconds) || 3;
+        const retryMaxDelay = Math.max(retryDelay, Number(job.retry_max_delay_seconds) || retryDelay);
+        retryPolicyEl.textContent =
+          retryStrategy === "exponential"
+            ? `指数退避 ${retryDelay}s -> ${retryMaxDelay}s`
+            : `固定间隔 ${retryDelay}s`;
+        proxyEl.textContent = renderProxyInfo(job);
+        messageEl.textContent = job.message || "-";
+        outputEl.textContent = job.output_file || "-";
+        setProgress(job.progress);
+
+        const logs = Array.isArray(job.logs) ? job.logs : [];
+        logsEl.textContent = logs.length ? logs.join("\n") : "等待任务日志...";
+        logsEl.scrollTop = logsEl.scrollHeight;
+
+        const active = isActiveStatus(job.status);
+        setRunning(active);
+        updateActionButtons(job);
+      }
+
+      async function refreshSystemStatus() {
+        const resp = await fetch("/api/system");
+        const data = await resp.json();
+
+        if (!data.yt_dlp_available) {
+          statusEl.textContent = "unavailable";
+          messageEl.textContent = data.hint;
+          submitBtn.disabled = true;
+          parseBtn.disabled = true;
+          return;
+        }
+
+        messageEl.textContent = `就绪: ${data.command || "yt-dlp"}`;
+      }
+
+      async function pollJob(jobId) {
+        const resp = await fetch(`/api/jobs/${jobId}`);
+        if (!resp.ok) {
+          setRunning(false);
+          updateActionButtons(null);
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+          return;
+        }
+
+        const job = await resp.json();
+        renderJob(job);
+        await maybeNotifyDone(job);
+      }
+
+      async function refreshJobList() {
+        const resp = await fetch("/api/jobs");
+        if (!resp.ok) {
+          return;
+        }
+
+        const data = await resp.json();
+        const jobs = Array.isArray(data.jobs) ? data.jobs.slice(0, 12) : [];
+
+        if (!jobs.length) {
+          jobListEl.textContent = "暂无任务";
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+          setRunning(false);
+          updateActionButtons(null);
+          return;
+        }
+
+        if (!notificationBootstrapped) {
+          for (const job of jobs) {
+            if (job.status === "done") {
+              notifiedDoneJobs.add(job.id);
+            }
+          }
+          notificationBootstrapped = true;
+        } else {
+          for (const job of jobs) {
+            await maybeNotifyDone(job);
+          }
+        }
+
+        jobListEl.innerHTML = "";
+        for (const job of jobs) {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "job-item";
+          const retryStrategy = String(job.retry_strategy || "fixed");
+          const retryDelay = Number(job.retry_delay_seconds) || 3;
+          const retryTag = retryStrategy === "exponential" ? `exp:${retryDelay}s` : `fixed:${retryDelay}s`;
+          const proxyPool = Array.isArray(job.proxy_pool) ? job.proxy_pool.filter(Boolean) : [];
+          const proxyTag = proxyPool.length
+            ? `p:${((Number(job.proxy_index) || 0) % proxyPool.length) + 1}/${proxyPool.length}`
+            : "p:-";
+          row.textContent = `${job.status.padEnd(9, " ")} | ${retryTag} | ${proxyTag} | retry ${job.retry_count || 0}/${job.retry_max || 0} | ${job.id} | ${job.url}`;
+          row.title = job.url;
+          row.addEventListener("click", () => {
+            currentJobId = job.id;
+            pollJob(job.id);
+            startPollingLoop();
+          });
+          jobListEl.append(row);
+        }
+
+        const activeJobs = jobs.filter((job) => isActiveStatus(job.status));
+        if (!activeJobs.length) {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+          if (!isActiveStatus(statusEl.textContent)) {
+            setRunning(false);
+          }
+          updateActionButtons(jobs.find((job) => job.id === currentJobId) || null);
+          return;
+        }
+
+        if (!currentJobId || !activeJobs.some((job) => job.id === currentJobId)) {
+          currentJobId = activeJobs[0].id;
+          pollJob(currentJobId);
+        }
+      }
+
+      function gatherPayload() {
+        const customFormat = formatIdEl.value.trim();
+        const pickedFormat = formatSelectEl.value;
+        const audioOnly = audioOnlyEl.checked;
+        const urls = batchUrlsEl.value
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+
+        const retryMax = clampInt(retryMaxEl.value, 0, 10, 2);
+        const retryStrategy = retryStrategyEl.value === "exponential" ? "exponential" : "fixed";
+        const retryDelaySeconds = clampInt(retryDelayEl.value, 1, 120, 3);
+        const retryMaxDelayRaw = clampInt(retryMaxDelayEl.value, 1, 600, 60);
+        const retryMaxDelaySeconds =
+          retryStrategy === "exponential"
+            ? Math.max(retryDelaySeconds, retryMaxDelayRaw)
+            : retryDelaySeconds;
+        const proxyPool = collectProxyPool();
+        retryMaxEl.value = String(retryMax);
+        retryDelayEl.value = String(retryDelaySeconds);
+        retryMaxDelayEl.value = String(retryMaxDelaySeconds);
+
+        return {
+          url: urlEl.value.trim(),
+          urls,
+          output_dir: outputDirEl.value.trim(),
+          format_id: customFormat || (audioOnly ? "" : pickedFormat),
+          extra_args: extraArgsEl.value.trim(),
+          audio_only: audioOnly,
+          audio_format: audioFormatEl.value,
+          playlist: playlistEl.checked,
+          retry_max: retryMax,
+          retry_strategy: retryStrategy,
+          retry_delay_seconds: retryDelaySeconds,
+          retry_max_delay_seconds: retryMaxDelaySeconds,
+          auto_open_output: autoOpenOutputEl.checked,
+          proxy_pool: proxyPool,
+        };
+      }
+
+      parseBtn.addEventListener("click", async () => {
+        const url = urlEl.value.trim();
+        if (!url) {
+          parseStatusEl.textContent = "请先输入链接";
+          return;
+        }
+
+        parseBtn.disabled = true;
+        parseStatusEl.textContent = "解析中...";
+
+        const payload = {
+          url,
+          playlist: playlistEl.checked,
+          extra_args: extraArgsEl.value.trim(),
+          proxy_pool: collectProxyPool(),
+        };
+
+        const resp = await fetch("/api/info", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await resp.json();
+        parseBtn.disabled = false;
+
+        if (!resp.ok) {
+          parseStatusEl.textContent = "解析失败";
+          renderMediaInfo(null);
+          messageEl.textContent = data.error || "解析失败";
+          return;
+        }
+
+        parseStatusEl.textContent = "解析完成";
+        renderMediaInfo(data);
+        populateFormats(data.formats);
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        setRunning(true);
+        setProgress(0);
+        logsEl.textContent = "正在创建任务...";
+
+        if (notifyDoneEl.checked) {
+          await ensureNotificationPermission();
+        }
+
+        const resp = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(gatherPayload()),
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) {
+          setRunning(false);
+          statusEl.textContent = "failed";
+          messageEl.textContent = data.error || "任务创建失败";
+          return;
+        }
+
+        const createdIds = Array.isArray(data.job_ids)
+          ? data.job_ids
+          : data.job_id
+            ? [data.job_id]
+            : [];
+        if (!createdIds.length) {
+          setRunning(false);
+          statusEl.textContent = "failed";
+          messageEl.textContent = "任务创建失败：后端未返回任务ID";
+          return;
+        }
+
+        currentJobId = data.first_job_id || createdIds[0];
+        jobIdEl.textContent = currentJobId;
+        statusEl.textContent = "queued";
+        messageEl.textContent =
+          createdIds.length > 1 ? `已入队 ${createdIds.length} 个任务（顺序下载）` : "任务已创建";
+
+        await pollJob(currentJobId);
+        await refreshJobList();
+        startPollingLoop();
+      });
+
+      cancelBtn.addEventListener("click", async () => {
+        if (!currentJobId) {
+          return;
+        }
+
+        cancelBtn.disabled = true;
+        await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
+        await pollJob(currentJobId);
+        await refreshJobList();
+      });
+
+      requeueBtn.addEventListener("click", async () => {
+        if (!currentJobId) {
+          return;
+        }
+
+        requeueBtn.disabled = true;
+        const resp = await fetch(`/api/jobs/${currentJobId}/requeue`, { method: "POST" });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          messageEl.textContent = data.error || "重排队失败";
+          await refreshJobList();
+          return;
+        }
+
+        currentJobId = data.job_id;
+        statusEl.textContent = "queued";
+        messageEl.textContent = `已重排队，新任务 ${data.job_id}`;
+        await pollJob(currentJobId);
+        await refreshJobList();
+        startPollingLoop();
+      });
+
+      openDirBtn.addEventListener("click", async () => {
+        if (!currentJobId) {
+          return;
+        }
+
+        openDirBtn.disabled = true;
+        const resp = await fetch(`/api/jobs/${currentJobId}/open-output`, { method: "POST" });
+        const data = await resp.json();
+        openDirBtn.disabled = false;
+
+        if (!resp.ok) {
+          messageEl.textContent = data.error || "打开目录失败";
+          return;
+        }
+
+        messageEl.textContent = `已打开目录: ${data.path}`;
+      });
+
+      notifyDoneEl.addEventListener("change", async () => {
+        if (notifyDoneEl.checked) {
+          const granted = await ensureNotificationPermission();
+          if (!granted) {
+            messageEl.textContent = "系统通知未授权，完成后仅在页面显示状态";
+          }
+        }
+      });
+
+      retryStrategyEl.addEventListener("change", applyRetryStrategyState);
+      audioOnlyEl.addEventListener("change", applyAudioOnlyState);
+
+      applyRetryStrategyState();
+      applyAudioOnlyState();
+      refreshSystemStatus();
+      refreshJobList();
+    </script>
+  </body>
+</html>
